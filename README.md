@@ -1,5 +1,7 @@
 # AutoParallel
 
+English | [中文](README_zh.md)
+
 Auto-parallelism strategy advisor for LLM training and inference.
 
 Given a model architecture and GPU cluster, AutoParallel enumerates all valid parallel strategies (DP, PP, TP, CP, EP), estimates per-GPU memory consumption, models throughput with a cost model, and recommends optimal configurations — no OOM, maximum efficiency.
