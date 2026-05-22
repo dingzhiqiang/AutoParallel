@@ -260,6 +260,81 @@ Top-3 Recommended (by aggregate decode throughput)
 
 See [DESIGN.md](DESIGN.md) for details.
 
+## Comparison with Other Systems
+
+| Feature | AutoParallel | [Galvatron](https://github.com/PKU-DAIR/Hetu-Galvatron) | [Alpa](https://github.com/alpa-project/alpa) | [ColossalAI](https://github.com/hpcaitech/ColossalAI) | DeepSpeed |
+| --- | --- | --- | --- | --- | --- |
+| **Approach** | Pure advisor | Profiler + Search + Runtime | ILP + DP search | Config-based | ZeRO config |
+| **DP/PP/TP** | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **EP (Expert Parallel)** | ✓ | ✓ | ✗ | ✓ | ✓ (MoE) |
+| **CP (Context Parallel)** | ✓ (MLA-aware) | ✗ | ✗ | ✗ | ✗ |
+| **ZeRO stages** | ✗ (planned) | ✓ (1/2/3) | ✗ | ✓ | ✓ (1/2/3/Infinity) |
+| **Sequence Parallel** | ✗ (planned) | ✓ (Megatron-SP, Ulysses) | ✗ | ✓ | ✗ |
+| **MLA support** | ✓ | ✗ | ✗ | ✗ | ✗ |
+| **FP8/Quantization** | ✗ (planned) | ✗ | ✗ | ✓ | ✗ |
+| **Inference mode** | ✓ (Roofline) | ✗ | ✗ | ✗ | ✗ |
+| **Engine-aware** | ✓ (Megatron/FSDP/SGLang) | ✗ | ✗ | ✗ | ✗ |
+| **GPU dependency** | None | Profiling needed | ILP solver | Runtime | Runtime |
+| **Training support** | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **Search algorithm** | Enumeration | Dynamic Programming | ILP | Config | Config |
+| **Layer-wise strategy** | ✗ (planned) | ✓ | ✓ | ✗ | ✗ |
+
+**AutoParallel's differentiators**:
+1. Unified training + inference advisor in one tool
+2. Engine-aware cost model (Megatron EP overlap, TP BW degradation)
+3. MLA-aware CP costing (3.5% of standard MHA)
+4. Zero GPU dependency — runs in seconds from config.json alone
+
+## Roadmap
+
+### Near-term
+
+- [ ] **FP8 / Quantization support** — Model weight precision (FP8 E4M3, INT8, INT4/AWQ/GPTQ).
+  FP8 halves weight memory (2→1 bytes/param) and doubles peak FLOPS on H100/H200.
+  Many production models (DeepSeek-V3, Qwen3.5-FP8) ship with native FP8 weights.
+  Implementation: add `--precision {bf16,fp8,int8,int4}` flag, adjust `dtype_bytes`
+  and `gpu_flops` accordingly.
+
+- [ ] **More inference engines** — Add vLLM and TensorRT-LLM engine presets.
+  SGLang cookbook already covers all three; cost model differences are minor
+  (memory allocation policy, chunked prefill, prefix caching).
+  Implementation: add `VLLM_ENGINE` and `TRTLLM_ENGINE` configs.
+
+- [ ] **ZeRO stages** — Model ZeRO-1 (optimizer sharding), ZeRO-2 (+gradient sharding),
+  ZeRO-3 (+parameter sharding) for FSDP/DeepSpeed training.
+  Changes optimizer and gradient memory formulas.
+
+### Mid-term
+
+- [ ] **Sequence Parallelism** — Model Megatron-SP (saves activation memory) and
+  DeepSpeed-Ulysses (ring attention variant). SP interacts with TP for activation
+  memory reduction.
+
+- [ ] **Layer-wise heterogeneous parallelism** — Allow different parallelism configs per
+  layer (like Galvatron). Useful for models with mixed dense/MoE layers
+  (e.g., first-k dense replace).
+
+- [ ] **Multi-stage RL workflow** — Model RLHF/GRPO resource allocation across
+  rollout (inference) + training stages on a shared GPU cluster.
+
+- [ ] **Interactive web UI** — Browser-based interface for exploring strategies,
+  comparing configurations, and visualizing memory/throughput tradeoffs.
+
+### Long-term
+
+- [ ] **NVSwitch / heterogeneous topology** — Model NVSwitch all-to-all bandwidth
+  (vs ring-based NVLink) and asymmetric interconnects.
+
+- [ ] **Automatic profiling integration** — One-click hardware profiling with
+  auto-calibration of the cost model. Currently profiling is optional Layer 2;
+  make it seamless.
+
+- [ ] **CI/CD integration** — Validate parallel configs before job submission.
+  `autoparallel check --config train.yaml` to catch OOM before wasting GPU hours.
+
+- [ ] **Multi-model serving** — Cost model for serving multiple models on a shared
+  cluster (model multiplexing, memory sharing).
+
 ## GPU Presets
 
 | GPU | Memory | Host Memory | BF16 TFLOPS | NVLink BW | IB BW |

@@ -301,6 +301,78 @@ Top-3 Recommended (by aggregate decode throughput)
 
 详见 [DESIGN.md](DESIGN.md)。
 
+## 与其他系统对比
+
+| 特性 | AutoParallel | [Galvatron](https://github.com/PKU-DAIR/Hetu-Galvatron) | [Alpa](https://github.com/alpa-project/alpa) | [ColossalAI](https://github.com/hpcaitech/ColossalAI) | DeepSpeed |
+| --- | --- | --- | --- | --- | --- |
+| **方法** | 纯推荐器 | Profiler + 搜索 + 运行时 | ILP + DP 搜索 | 配置驱动 | ZeRO 配置 |
+| **DP/PP/TP** | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **EP（专家并行）** | ✓ | ✓ | ✗ | ✓ | ✓ (MoE) |
+| **CP（上下文并行）** | ✓（MLA 感知） | ✗ | ✗ | ✗ | ✗ |
+| **ZeRO stages** | ✗（计划中） | ✓ (1/2/3) | ✗ | ✓ | ✓ (1/2/3/Infinity) |
+| **序列并行** | ✗（计划中） | ✓ (Megatron-SP, Ulysses) | ✗ | ✓ | ✗ |
+| **MLA 支持** | ✓ | ✗ | ✗ | ✗ | ✗ |
+| **FP8/量化** | ✗（计划中） | ✗ | ✗ | ✓ | ✗ |
+| **推理模式** | ✓（Roofline） | ✗ | ✗ | ✗ | ✗ |
+| **引擎感知** | ✓（Megatron/FSDP/SGLang） | ✗ | ✗ | ✗ | ✗ |
+| **GPU 依赖** | 无 | 需要 Profiling | ILP 求解器 | 运行时 | 运行时 |
+| **训练支持** | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **搜索算法** | 枚举 | 动态规划 | ILP | 配置 | 配置 |
+| **逐层策略** | ✗（计划中） | ✓ | ✓ | ✗ | ✗ |
+
+**AutoParallel 的差异化优势**：
+1. 训练 + 推理统一推荐，一个工具覆盖两种场景
+2. 引擎感知代价模型（Megatron EP overlap、TP 带宽退化）
+3. MLA 感知的 CP 代价计算（仅标准 MHA 的 3.5%）
+4. 零 GPU 依赖——仅需 config.json，秒级完成推荐
+
+## 路线图
+
+### 近期
+
+- [ ] **FP8 / 量化支持** — 建模权重精度（FP8 E4M3、INT8、INT4/AWQ/GPTQ）。
+  FP8 将权重内存减半（2→1 bytes/param），在 H100/H200 上峰值 FLOPS 翻倍。
+  许多生产模型（DeepSeek-V3、Qwen3.5-FP8）已原生支持 FP8 权重。
+  实现方案：添加 `--precision {bf16,fp8,int8,int4}` 参数，相应调整 `dtype_bytes`
+  和 `gpu_flops`。
+
+- [ ] **更多推理引擎** — 添加 vLLM 和 TensorRT-LLM 引擎预设。
+  SGLang cookbook 已覆盖三种引擎；代价模型差异较小
+  （内存分配策略、chunked prefill、prefix caching）。
+  实现方案：添加 `VLLM_ENGINE` 和 `TRTLLM_ENGINE` 配置。
+
+- [ ] **ZeRO stages** — 建模 ZeRO-1（优化器分片）、ZeRO-2（+梯度分片）、
+  ZeRO-3（+参数分片），用于 FSDP/DeepSpeed 训练。
+  修改优化器和梯度的显存计算公式。
+
+### 中期
+
+- [ ] **序列并行（Sequence Parallelism）** — 建模 Megatron-SP（节省激活显存）和
+  DeepSpeed-Ulysses（Ring Attention 变体）。SP 与 TP 交互影响激活显存。
+
+- [ ] **逐层异构并行** — 允许不同层使用不同的并行配置（类似 Galvatron）。
+  适用于混合 dense/MoE 层的模型（如 first-k dense replace）。
+
+- [ ] **多阶段 RL 工作流** — 建模 RLHF/GRPO 在共享 GPU 集群上的
+  rollout（推理）+ 训练阶段的资源分配。
+
+- [ ] **交互式 Web UI** — 浏览器界面，用于探索策略、对比配置、
+  可视化显存/吞吐量权衡。
+
+### 长期
+
+- [ ] **NVSwitch / 异构拓扑** — 建模 NVSwitch all-to-all 带宽
+  （对比 ring-based NVLink）和非对称互联拓扑。
+
+- [ ] **自动 Profiling 集成** — 一键硬件性能采集 + 代价模型自动校准。
+  目前 profiling 是可选的 Layer 2；目标是做到无缝集成。
+
+- [ ] **CI/CD 集成** — 在提交作业前验证并行配置。
+  `autoparallel check --config train.yaml`，在浪费 GPU 时间前拦截 OOM。
+
+- [ ] **多模型服务** — 共享集群上多模型服务的代价模型
+  （模型复用、显存共享）。
+
 ## 验证
 
 AutoParallel 的推荐已通过以下方式交叉验证：
