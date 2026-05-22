@@ -277,7 +277,7 @@ See [DESIGN.md](DESIGN.md) for details.
 | **GPU dependency** | None | Profiling needed | ILP solver | Runtime | Runtime |
 | **Training support** | ✓ | ✓ | ✓ | ✓ | ✓ |
 | **Search algorithm** | Enumeration | Dynamic Programming | ILP | Config | Config |
-| **Layer-wise strategy** | ✗ (planned) | ✓ | ✓ | ✗ | ✗ |
+
 
 **AutoParallel's differentiators**:
 1. Unified training + inference advisor in one tool
@@ -310,10 +310,6 @@ See [DESIGN.md](DESIGN.md) for details.
   memory savings (ReduceScatter/AllGather on LayerNorm activations within TP groups).
   This is NOT the same as CP — SP reduces activation memory from O(s) to O(s/tp),
   affecting the memory formula but not adding a new parallelism dimension.
-
-- [ ] **Layer-wise heterogeneous parallelism** — Allow different parallelism configs per
-  layer (like Galvatron). Useful for models with mixed dense/MoE layers
-  (e.g., first-k dense replace).
 
 - [ ] **Multi-stage RL workflow** — Model RLHF/GRPO resource allocation across
   rollout (inference) + training stages on a shared GPU cluster.

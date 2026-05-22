@@ -318,7 +318,7 @@ Top-3 Recommended (by aggregate decode throughput)
 | **GPU 依赖** | 无 | 需要 Profiling | ILP 求解器 | 运行时 | 运行时 |
 | **训练支持** | ✓ | ✓ | ✓ | ✓ | ✓ |
 | **搜索算法** | 枚举 | 动态规划 | ILP | 配置 | 配置 |
-| **逐层策略** | ✗（计划中） | ✓ | ✓ | ✗ | ✗ |
+
 
 **AutoParallel 的差异化优势**：
 1. 训练 + 推理统一推荐，一个工具覆盖两种场景
@@ -351,9 +351,6 @@ Top-3 Recommended (by aggregate decode throughput)
   （TP 组内对 LayerNorm 激活做 ReduceScatter/AllGather）。
   注意：SP 与 CP 不同——SP 将激活显存从 O(s) 降到 O(s/tp)，
   影响显存公式但不增加新的并行维度。
-
-- [ ] **逐层异构并行** — 允许不同层使用不同的并行配置（类似 Galvatron）。
-  适用于混合 dense/MoE 层的模型（如 first-k dense replace）。
 
 - [ ] **多阶段 RL 工作流** — 建模 RLHF/GRPO 在共享 GPU 集群上的
   rollout（推理）+ 训练阶段的资源分配。
