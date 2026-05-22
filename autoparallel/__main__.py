@@ -115,6 +115,14 @@ class ModelSpec:
     def from_hf_config(cls, path: str) -> ModelSpec:
         with open(f"{path}/config.json") as f:
             cfg = json.load(f)
+        # Some models (Qwen3.5-MoE, VL models) nest params under text_config
+        if "text_config" in cfg and "hidden_size" not in cfg:
+            cfg = {**cfg, **cfg["text_config"]}
+        # Qwen3.5 uses shared_expert_intermediate_size instead of n_shared_experts
+        n_shared = cfg.get("n_shared_experts", 0) or 0
+        shared_inter = cfg.get("shared_expert_intermediate_size", 0) or 0
+        if n_shared == 0 and shared_inter > 0:
+            n_shared = 1
         return cls(
             hidden_size=cfg.get("hidden_size", 4096),
             num_layers=cfg.get("num_hidden_layers", 32),
@@ -122,7 +130,10 @@ class ModelSpec:
             num_kv_heads=cfg.get(
                 "num_key_value_heads", cfg.get("num_attention_heads", 32)
             ),
-            intermediate_size=cfg.get("intermediate_size", 11008),
+            intermediate_size=cfg.get(
+                "intermediate_size",
+                cfg.get("shared_expert_intermediate_size", 11008),
+            ),
             vocab_size=cfg.get("vocab_size", 32000),
             num_experts=cfg.get(
                 "n_routed_experts",
@@ -131,7 +142,7 @@ class ModelSpec:
             or 0,
             num_experts_per_tok=cfg.get("num_experts_per_tok", 0) or 0,
             expert_intermediate_size=cfg.get("moe_intermediate_size", 0) or 0,
-            n_shared_experts=cfg.get("n_shared_experts", 0) or 0,
+            n_shared_experts=n_shared,
             kv_lora_rank=cfg.get("kv_lora_rank", 0) or 0,
             q_lora_rank=cfg.get("q_lora_rank", 0) or 0,
             qk_nope_head_dim=cfg.get("qk_nope_head_dim", 0) or 0,
@@ -1325,8 +1336,9 @@ def search_inference_strategies(
     valid_pp = [1, 2, 4] if allow_pp else [1]
 
     for tp in valid_tp:
-        if not model.is_mla and model.num_kv_heads % tp != 0:
-            continue
+        # Inference engines (SGLang/vLLM) can replicate KV heads when tp > kv_heads,
+        # so we only require tp divides num_heads, not kv_heads.
+        # Training requires kv_heads % tp == 0 (handled in search_strategies).
         if model.has_group_norm:
             heads_per_tp = model.num_heads // tp
             if heads_per_tp % model.group_norm_size != 0:
