@@ -137,6 +137,8 @@ Detailed experimental results are in [BENCHMARK.md](BENCHMARK.md). Summary:
 | Metric | Result |
 | --- | --- |
 | Memory estimation error | <5% (GLM-5.1, 128×H200) |
+| Inference memory error | 2.1% (GLM-5.1 SGLang deployment) |
+| SGLang cookbook alignment | TP/EP matches official cookbook configs |
 | Ranking accuracy (with overlap) | Correctly identifies optimal strategy |
 | Ranking accuracy (without overlap) | Incorrect — biased toward high TP |
 | Search time | <1 second (pure analytical) |
@@ -163,7 +165,8 @@ Detailed experimental results are in [BENCHMARK.md](BENCHMARK.md). Summary:
 3. **Sequence parallelism**: Does not explicitly model Megatron's sequence parallelism
    optimization for activation memory.
 4. **Multi-stage workflows**: Does not model RLHF/GRPO multi-stage resource allocation.
-5. **Profiling calibration**: Could further improve accuracy with a small set of benchmark
+5. **FP8 quantization**: Currently models BF16 weights only; FP8 models need extension.
+6. **Profiling calibration**: Could further improve accuracy with a small set of benchmark
    data points.
 
 ## References

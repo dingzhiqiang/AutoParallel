@@ -164,7 +164,7 @@ python -m autoparallel --mode inference --model-path /path/to/model --n-gpus 64
 | `--n-gpus` | 128 | Total number of GPUs |
 | `--gpus-per-node` | 8 | GPUs per node |
 | `--gpu-type` | H200 | GPU preset (H200/H100/H800/A100/A800) |
-| `--gpu-memory-gb` | 140 | Override GPU memory (GB) |
+| `--gpu-memory-gb` | auto | Override GPU memory (GB, 0=use preset) |
 | `--host-memory-gb` | auto | Override host CPU memory (GB) |
 | `--gpu-flops` | auto | Override BF16 TFLOPS |
 | `--bw-nvlink` | auto | Override NVLink bandwidth (GB/s) |
@@ -269,6 +269,25 @@ See [DESIGN.md](DESIGN.md) for details.
 | H800 | 80 GB | 1000 GB | 990 | 400 GB/s | 50 GB/s |
 | A100 | 80 GB | 1000 GB | 312 | 300 GB/s | 25 GB/s |
 | A800 | 80 GB | 1000 GB | 312 | 200 GB/s | 25 GB/s |
+
+## Validation
+
+AutoParallel's recommendations have been cross-validated against:
+
+- **Real deployment**: GLM-5.1 on 128×H200, <5% memory error, correct ranking
+- **SGLang official cookbook**: TP/EP recommendations align with SGLang's [auto-benchmark configs](https://github.com/sgl-project/sglang/tree/main/.claude/skills/llm-serving-auto-benchmark/configs/cookbook-llm)
+- **Qwen model family**: 7 models from 8B to 397B tested (Dense, MoE, GQA)
+
+See [BENCHMARK.md](BENCHMARK.md) ([中文](BENCHMARK_zh.md)) for details.
+
+## Documentation
+
+| Document | Description |
+| --- | --- |
+| [README.md](README.md) ([中文](README_zh.md)) | Quick start and CLI reference |
+| [DESIGN.md](DESIGN.md) | Technical design with formulas (中文) |
+| [PAPER.md](PAPER.md) ([中文](PAPER_zh.md)) | Paper-style write-up with contributions |
+| [BENCHMARK.md](BENCHMARK.md) ([中文](BENCHMARK_zh.md)) | Real-world validation results |
 
 ## References
 

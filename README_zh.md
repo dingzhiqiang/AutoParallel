@@ -164,7 +164,7 @@ python -m autoparallel --mode inference --model-path /path/to/model --n-gpus 64
 | `--n-gpus` | 128 | GPU 总数 |
 | `--gpus-per-node` | 8 | 每节点 GPU 数 |
 | `--gpu-type` | H200 | GPU 型号预设 (H200/H100/H800/A100/A800) |
-| `--gpu-memory-gb` | 140 | 覆盖 GPU 显存 (GB) |
+| `--gpu-memory-gb` | 自动 | 覆盖 GPU 显存 (GB，0=用预设值) |
 | `--host-memory-gb` | 自动 | 覆盖节点 CPU 内存 (GB) |
 | `--gpu-flops` | 自动 | 覆盖 BF16 TFLOPS |
 | `--bw-nvlink` | 自动 | 覆盖 NVLink 带宽 (GB/s) |
@@ -300,6 +300,25 @@ Top-3 Recommended (by aggregate decode throughput)
 5. **Profiling 插值**（可选）：实测 GEMM + 通信数据，对数空间插值替代解析估算
 
 详见 [DESIGN.md](DESIGN.md)。
+
+## 验证
+
+AutoParallel 的推荐已通过以下方式交叉验证：
+
+- **真实部署**：GLM-5.1 在 128×H200 上，<5% 显存误差，排序正确
+- **SGLang 官方 cookbook**：TP/EP 推荐与 SGLang 的[自动 benchmark 配置](https://github.com/sgl-project/sglang/tree/main/.claude/skills/llm-serving-auto-benchmark/configs/cookbook-llm)对齐
+- **Qwen 模型系列**：7 个模型从 8B 到 397B 测试（Dense、MoE、GQA）
+
+详见 [BENCHMARK.md](BENCHMARK.md)（[中文](BENCHMARK_zh.md)）。
+
+## 文档
+
+| 文档 | 说明 |
+| --- | --- |
+| [README.md](README.md)（[中文](README_zh.md)） | 快速开始和 CLI 参考 |
+| [DESIGN.md](DESIGN.md) | 技术设计文档（含公式推导） |
+| [PAPER.md](PAPER.md)（[中文](PAPER_zh.md)） | 论文风格写作 |
+| [BENCHMARK.md](BENCHMARK.md)（[中文](BENCHMARK_zh.md)） | 真实环境验证结果 |
 
 ## 参考
 

@@ -1557,7 +1557,8 @@ Examples:
     g = parser.add_argument_group("Cluster")
     g.add_argument("--n-gpus", type=int, default=128)
     g.add_argument("--gpus-per-node", type=int, default=8)
-    g.add_argument("--gpu-memory-gb", type=float, default=140.0)
+    g.add_argument("--gpu-memory-gb", type=float, default=0,
+                    help="GPU HBM per GPU in GB (0=use GPU preset default)")
     g.add_argument(
         "--host-memory-gb",
         type=float,
@@ -1783,10 +1784,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             first_k_dense_replace=args.first_k_dense_replace,
         )
 
+    preset = GPU_PRESETS.get(args.gpu_type, HardwareSpec())
+    gpu_mem = args.gpu_memory_gb if args.gpu_memory_gb > 0 else preset.gpu_memory_gb
     cluster = ClusterSpec(
         n_gpus=args.n_gpus,
         gpus_per_node=args.gpus_per_node,
-        gpu_memory_gb=args.gpu_memory_gb,
+        gpu_memory_gb=gpu_mem,
     )
 
     if args.find_min_nodes:
