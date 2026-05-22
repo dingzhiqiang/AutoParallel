@@ -360,8 +360,7 @@ See [BENCHMARK.md](BENCHMARK.md) ([中文](BENCHMARK_zh.md)) for details.
 | Document | Description |
 | --- | --- |
 | [README.md](README.md) ([中文](README_zh.md)) | Quick start and CLI reference |
-| [DESIGN.md](DESIGN.md) | Technical design with formulas (中文) |
-| [PAPER.md](PAPER.md) ([中文](PAPER_zh.md)) | Paper-style write-up with contributions |
+| [DESIGN.md](DESIGN.md) | Technical design with formulas and key design decisions |
 | [BENCHMARK.md](BENCHMARK.md) ([中文](BENCHMARK_zh.md)) | Real-world validation results |
 
 ## References

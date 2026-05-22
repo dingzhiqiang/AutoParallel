@@ -388,8 +388,7 @@ AutoParallel 的推荐已通过以下方式交叉验证：
 | 文档 | 说明 |
 | --- | --- |
 | [README.md](README.md)（[中文](README_zh.md)） | 快速开始和 CLI 参考 |
-| [DESIGN.md](DESIGN.md) | 技术设计文档（含公式推导） |
-| [PAPER.md](PAPER.md)（[中文](PAPER_zh.md)） | 论文风格写作 |
+| [DESIGN.md](DESIGN.md) | 技术设计文档（含公式推导和核心设计决策） |
 | [BENCHMARK.md](BENCHMARK.md)（[中文](BENCHMARK_zh.md)） | 真实环境验证结果 |
 
 ## 参考

@@ -40,6 +40,54 @@ autoparallel/
 | **AIConfigurator** [Xu et al., 2025] | 算子级性能数据库 + 迭代级建模 | 框架感知，但仅面向推理 |
 | **AutoParallel** (本系统) | 解析代价模型 + 可选 Profiling 插值 | 训练 + 推理，MoE/MLA/EP 支持 |
 
+详细的功能对比见 [README.md](README.md) 中的"与其他系统对比"表。
+
+### 1.4 核心设计决策
+
+DESIGN.md 后续章节给出完整的公式推导。本节先阐述三个关键设计决策的**动机**——它们是 AutoParallel 与先前系统的核心差异。
+
+#### 1.4.1 EP AllToAll-FFN Overlap 建模
+
+**观察**：Megatron 的 MoE token dispatcher 将 AllToAll dispatch/combine 与 expert FFN 计算并发执行。先前的模型（Alpa、AIConfigurator）假设串行执行，系统性地高估 EP 通信代价。
+
+**影响**：串行假设使优化器偏向高 TP 策略（减少 EP 通信量），但实际上低 TP + 高 EP 配置在有 overlap 时更快。
+
+**建模**：
+
+```
+// Megatron 引擎（overlap）：
+T_MoE = max(T_ep, T_routed_ffn)
+
+// FSDP 引擎（串行）：
+T_MoE = T_ep + T_routed_ffn
+```
+
+通过 `EngineConfig` 抽象控制，使代价模型具备引擎感知能力。
+
+**验证**：在 GLM-5.1（128×H200，BS=16）上，串行模型错误地将 TP=16 排为 #1。添加 overlap 建模后，TP=8 CP=2 正确排名 #1，与实测 step 时间一致。详见 [BENCHMARK.md](BENCHMARK.md)。
+
+#### 1.4.2 TP NVLink 带宽退化
+
+**观察**：TP > 4 时，多个 AllReduce ring 竞争 NVLink 带宽。实测 TP=8 的有效带宽约为 TP=4 的 70%。
+
+**建模**：对大 TP 组施加退化因子：
+
+$$B_{nvlink}^{eff} = \frac{B_{nvlink}}{\sqrt{t / 4}} \quad (t > 4)$$
+
+该校正为 Megatron 特有（`EngineConfig` 中 `tp_bw_degradation=True`）。FSDP 和 SGLang 引擎不表现此模式。
+
+#### 1.4.3 MLA 感知的 Context Parallelism
+
+**观察**：MLA（Multi-head Latent Attention）将 KV 压缩到极低维度。CP ring attention 在相邻 rank 间传输 KV——使用 MLA 时，传输量降至**标准 MHA 的 3.5%**：
+
+```
+KV_dim(MLA)  = kv_lora_rank + qk_rope_head_dim = 512 + 64 = 576
+KV_dim(MHA)  = num_kv_heads × head_dim × 2 = 64 × 128 × 2 = 16,384
+比率 = 576 / 16,384 ≈ 3.5%
+```
+
+这使 CP=2 或 CP=4 在 MLA 模型（DeepSeek-V2/V3、GLM-5.1）上几乎无开销，使先前模型会惩罚的策略变得可行。
+
 ## 2. 数据模型
 
 ### 2.1 硬件规格 (HardwareSpec)
@@ -572,7 +620,16 @@ $$\log t_q = \log t_1 + \frac{\log M_q - \log M_1}{\log M_2 - \log M_1} \cdot (\
 5. 显存估算（§3.3）→ 过滤 OOM
 6. 性能估算（§5）→ 按聚合 decode 吞吐量降序排序
 
-## 8. 参考文献
+## 8. 局限性
+
+1. **激活估计**：使用经验因子而非精确的逐层计算。
+2. **通信拓扑**：假设均匀的 NVLink/IB；未建模 NVSwitch 或非对称拓扑。
+3. **序列并行**：未显式建模 Megatron 的 Sequence Parallelism 对激活内存的优化。
+4. **FP8 量化**：当前仅建模 BF16 权重；FP8/INT8 等精度需要扩展。
+
+完整的未来规划详见 [README.md](README.md) 中的"路线图"章节。
+
+## 9. 参考文献
 
 1. Zheng, L. et al. "Alpa: Automating Inter- and Intra-Operator Parallelism for Distributed Deep Learning." OSDI, 2022.
 2. Xu, T. et al. "AIConfigurator: Lightning-Fast Configuration Optimization for Multi-Framework LLM Serving." 2025.
