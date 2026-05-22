@@ -1196,7 +1196,16 @@ def compute_inference_score(
         return tp_time + ep_time
 
     # --- Helper: compute FLOPs per layer ---
-    def _compute_flops(T: int) -> float:
+    def _compute_flops(T: int, batch: int = 1) -> float:
+        """Compute FLOPs per layer.
+
+        For prefill: T = total tokens (isl * batch / tp), batch = actual batch size.
+        Projection/FFN FLOPs scale with total tokens (batched GEMM).
+        Attention score FLOPs are per-request (no cross-request attention),
+        so use per-request seq_len = T / batch for the quadratic term.
+        For decode: T = batch_size, batch = 1 (each token attends to its own KV).
+        """
+        seq_len = T / batch if batch > 1 else T
         if model.is_mla:
             replicated_proj = H * model.q_lora_rank + H * (
                 model.kv_lora_rank + model.qk_rope_head_dim
@@ -1211,11 +1220,11 @@ def compute_inference_score(
             attn_proj = 2.0 * T * (replicated_proj + tp_split_proj / tp)
             qk_dim = model.qk_nope_head_dim + model.qk_rope_head_dim
             attn_score = (
-                2.0 * T * T * model.num_heads * (qk_dim + model.v_head_dim) / tp
+                2.0 * batch * seq_len * seq_len * model.num_heads * (qk_dim + model.v_head_dim) / tp
             )
         else:
             attn_proj = 8.0 * H * H * T / tp
-            attn_score = 4.0 * T * T * H / tp
+            attn_score = 4.0 * batch * seq_len * seq_len * H / tp
         if model.is_moe:
             routed = (
                 float(model.num_experts_per_tok)
@@ -1242,7 +1251,7 @@ def compute_inference_score(
 
     # === Prefill (compute-bound) ===
     T_prefill = isl * batch_size // tp
-    prefill_compute = _compute_flops(T_prefill) / hw.gpu_flops
+    prefill_compute = _compute_flops(T_prefill, batch=batch_size) / hw.gpu_flops
     prefill_comm = _comm_time(T_prefill)
     prefill_per_layer = prefill_compute + prefill_comm
     prefill_total = prefill_per_layer * layers
