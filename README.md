@@ -6,6 +6,10 @@ Auto-parallelism strategy advisor for LLM training and inference.
 
 Given a model architecture and GPU cluster, AutoParallel enumerates all valid parallel strategies (DP, PP, TP, CP, EP), estimates per-GPU memory consumption, models throughput with a cost model, and recommends optimal configurations — no OOM, maximum efficiency.
 
+<p align="center">
+  <img src="docs/images/architecture.png" alt="AutoParallel System Architecture" width="800"/>
+</p>
+
 ## Features
 
 - **Training + Inference**: separate strategy search with engine-specific cost models
@@ -239,6 +243,14 @@ Top-3 Recommended (by aggregate decode throughput)
 ```
 
 ## Cost Model
+
+<p align="center">
+  <img src="docs/images/cost_model.png" alt="Training Cost Model Pipeline" width="800"/>
+</p>
+
+<p align="center">
+  <img src="docs/images/inference_model.png" alt="Inference Performance Model" width="800"/>
+</p>
 
 1. **ALPA alpha-beta communication model**: TP AllReduce, EP AllToAll, CP Ring
 2. **Hierarchical EP AllToAll**: NVLink intra-node + IB cross-node traffic split

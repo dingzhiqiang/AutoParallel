@@ -6,6 +6,10 @@ LLM 训练与推理的自动并行策略推荐工具。
 
 给定模型架构和 GPU 集群，AutoParallel 枚举所有合法的并行策略组合（DP, PP, TP, CP, EP），估算每张 GPU 的显存占用，基于代价模型对吞吐量排序，推荐最优配置——不 OOM，效率最高。
 
+<p align="center">
+  <img src="docs/images/architecture.png" alt="AutoParallel 系统架构" width="800"/>
+</p>
+
 ## 特性
 
 - **训练 + 推理**：分别搜索训练和推理的最优并行策略，使用引擎特定的代价模型
@@ -280,6 +284,14 @@ Top-3 Recommended (by aggregate decode throughput)
 ```
 
 ## 代价模型
+
+<p align="center">
+  <img src="docs/images/cost_model.png" alt="训练代价模型流程" width="800"/>
+</p>
+
+<p align="center">
+  <img src="docs/images/inference_model.png" alt="推理性能模型" width="800"/>
+</p>
 
 1. **ALPA alpha-beta 通信模型**：对 TP AllReduce、EP AllToAll、CP Ring 分别建模
 2. **分层 EP AllToAll**：区分 NVLink 节点内和 IB 跨节点的流量比例

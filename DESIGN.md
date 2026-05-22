@@ -13,6 +13,10 @@ AutoParallel 是一个面向大语言模型（LLM）分布式训练与推理的�
 
 ### 1.2 系统架构
 
+<p align="center">
+  <img src="docs/images/architecture.png" alt="System Architecture" width="800"/>
+</p>
+
 ```
 autoparallel/
 ├── __main__.py              # CLI 入口 + 策略搜索 + 代价模型 + 显存估算
@@ -255,6 +259,10 @@ $$M_{act}^{infer} = \max\left(2 \cdot T_{prefill} \cdot H \cdot c,\ 70\ \text{MB
 
 ## 4. 训练吞吐量代价模型
 
+<p align="center">
+  <img src="docs/images/cost_model.png" alt="Training Cost Model Pipeline" width="800"/>
+</p>
+
 训练代价模型采用 **ALPA 风格的 alpha-beta 通信模型** [Zheng et al., OSDI'22]，结合 **分层 EP AllToAll 建模**（参考 AIConfigurator [Xu et al., 2025]），估算每个策略的相对吞吐量。
 
 ### 4.1 计算代价（per-layer）
@@ -400,6 +408,10 @@ $$Score = \frac{d \cdot n_{mb}}{T_{total}}$$
 得分越高，策略越优。
 
 ## 5. 推理性能模型
+
+<p align="center">
+  <img src="docs/images/inference_model.png" alt="Inference Performance Model" width="800"/>
+</p>
 
 推理性能模型基于 **Roofline 模型** [Williams et al., 2009]，区分 prefill（compute-bound）和 decode（memory-bandwidth-bound）两个阶段。
 
