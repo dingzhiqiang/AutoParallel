@@ -347,8 +347,10 @@ Top-3 Recommended (by aggregate decode throughput)
 
 ### 中期
 
-- [ ] **序列并行（Sequence Parallelism）** — 建模 Megatron-SP（节省激活显存）和
-  DeepSpeed-Ulysses（Ring Attention 变体）。SP 与 TP 交互影响激活显存。
+- [ ] **序列并行（激活显存优化）** — 建模 Megatron-SP 对激活显存的优化
+  （TP 组内对 LayerNorm 激活做 ReduceScatter/AllGather）。
+  注意：SP 与 CP 不同——SP 将激活显存从 O(s) 降到 O(s/tp)，
+  影响显存公式但不增加新的并行维度。
 
 - [ ] **逐层异构并行** — 允许不同层使用不同的并行配置（类似 Galvatron）。
   适用于混合 dense/MoE 层的模型（如 first-k dense replace）。
@@ -377,7 +379,9 @@ Top-3 Recommended (by aggregate decode throughput)
 
 AutoParallel 的推荐已通过以下方式交叉验证：
 
-- **真实部署**：GLM-5.1 在 128×H200 上，<5% 显存误差，排序正确
+- **GLM-5.1 训练**（128×H200）：4 种策略实测对比，显存误差 <5%，正确识别最优策略（TP=8 CP=2，37.6s/step）
+- **BailingMoE CP 扩展**（64×H200）：CP=4→CP=8 实现 2.25 倍加速，验证 MLA 感知的 CP 代价模型
+- **MLA CP 验证**（GLM-5.1）：CP=4 vs CP=8 step time 差异 <2%——确认 KV 传输量仅为标准 MHA 的 3.5%
 - **SGLang 官方 cookbook**：TP/EP 推荐与 SGLang 的[自动 benchmark 配置](https://github.com/sgl-project/sglang/tree/main/.claude/skills/llm-serving-auto-benchmark/configs/cookbook-llm)对齐
 - **Qwen 模型系列**：7 个模型从 8B 到 397B 测试（Dense、MoE、GQA）
 

@@ -24,6 +24,20 @@ Real-world validation of AutoParallel's strategy recommendations.
 
 Memory estimation error is consistently **<5%**, sufficient for OOM filtering.
 
+### Training Throughput: BS=16, MTPM=128K (Full Benchmark)
+
+4 strategies compared on 128×H200, Slurm jobs A/B/C/D:
+
+| Strategy | DP | PP | TP | CP | EP | Avg Step (s) | Mem (GB) | Rank |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| **A (optimal)** | 2 | 4 | 8 | 2 | 16 | **37.6** | 101 | **#1** |
+| C | 2 | 4 | 4 | 4 | 16 | 45.6 | 101.5 | #2 |
+| B | 2 | 4 | 16 | 1 | 16 | ~50 | 99 | #3 |
+| D | 2 | 2 | 16 | 2 | 32 | 73.3 | 100 | #4 |
+
+AutoParallel (with EP overlap modeling) correctly identifies Strategy A as optimal.
+The old serial model incorrectly favored Strategy B (TP=16).
+
 ### Training Throughput: BS=16, MTPM=16K
 
 #### Before vs After EP Overlap Modeling
@@ -68,6 +82,28 @@ MLA compresses KV to extremely low dimensions, making CP nearly free:
 
 This explains why CP=2 or CP=4 has almost zero overhead on MLA models like GLM-5.1
 and DeepSeek-V3.
+
+**Real measurement (GLM-5.1, 128×H200, BS=8, MTPM=16K)**:
+
+| Strategy | TP | CP | EP | Avg Step (s) | Mem (GB) |
+| --- | --- | --- | --- | --- | --- |
+| s1 | 8 | 4 | 32 | 66.6 | 105 |
+| s2 | 4 | 8 | 32 | 65.1 | 112 |
+
+CP=4 vs CP=8 step time difference is **<2%**, confirming MLA makes CP communication
+nearly free.
+
+### BailingMoE CP Scaling (64×H200)
+
+BailingMoE V2.5 (256 experts, MLA, Lightning Attention) on 64 GPU:
+
+| CP | Step Time (s) | GPU Mem (GB) | Speedup |
+| --- | --- | --- | --- |
+| 4 | 106.66 | 57.88 (73%) | 1.0× |
+| 8 | **47.28** | **41.00** (52%) | **2.25×** |
+
+CP=8 achieves 2.25× speedup: both activation memory reduction and sequence-level
+parallelism contribute. The low CP communication cost (MLA) makes higher CP efficient.
 
 ### TP Bandwidth Degradation
 

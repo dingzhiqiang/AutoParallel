@@ -624,7 +624,7 @@ $$\log t_q = \log t_1 + \frac{\log M_q - \log M_1}{\log M_2 - \log M_1} \cdot (\
 
 1. **激活估计**：使用经验因子而非精确的逐层计算。
 2. **通信拓扑**：假设均匀的 NVLink/IB；未建模 NVSwitch 或非对称拓扑。
-3. **序列并行**：未显式建模 Megatron 的 Sequence Parallelism 对激活内存的优化。
+3. **Megatron-SP 激活优化**：未建模 Megatron Sequence Parallelism（TP 组内 ReduceScatter/AllGather）对激活显存的优化。注意 SP 与 CP 不同：CP 是独立并行维度（已支持），SP 是 TP 组内的激活显存优化。
 4. **FP8 量化**：当前仅建模 BF16 权重；FP8/INT8 等精度需要扩展。
 
 完整的未来规划详见 [README.md](README.md) 中的"路线图"章节。

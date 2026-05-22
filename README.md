@@ -306,9 +306,10 @@ See [DESIGN.md](DESIGN.md) for details.
 
 ### Mid-term
 
-- [ ] **Sequence Parallelism** — Model Megatron-SP (saves activation memory) and
-  DeepSpeed-Ulysses (ring attention variant). SP interacts with TP for activation
-  memory reduction.
+- [ ] **Sequence Parallelism (activation optimization)** — Model Megatron-SP's activation
+  memory savings (ReduceScatter/AllGather on LayerNorm activations within TP groups).
+  This is NOT the same as CP — SP reduces activation memory from O(s) to O(s/tp),
+  affecting the memory formula but not adding a new parallelism dimension.
 
 - [ ] **Layer-wise heterogeneous parallelism** — Allow different parallelism configs per
   layer (like Galvatron). Useful for models with mixed dense/MoE layers
@@ -349,7 +350,9 @@ See [DESIGN.md](DESIGN.md) for details.
 
 AutoParallel's recommendations have been cross-validated against:
 
-- **Real deployment**: GLM-5.1 on 128×H200, <5% memory error, correct ranking
+- **GLM-5.1 training** (128×H200): 4 strategies benchmarked, <5% memory error, correctly identified optimal (TP=8 CP=2, 37.6s/step)
+- **BailingMoE CP scaling** (64×H200): CP=4→CP=8 achieves 2.25× speedup, validating MLA-aware CP cost model
+- **MLA CP verification** (GLM-5.1): CP=4 vs CP=8 step time <2% difference — confirms 3.5% KV transfer ratio
 - **SGLang official cookbook**: TP/EP recommendations align with SGLang's [auto-benchmark configs](https://github.com/sgl-project/sglang/tree/main/.claude/skills/llm-serving-auto-benchmark/configs/cookbook-llm)
 - **Qwen model family**: 7 models from 8B to 397B tested (Dense, MoE, GQA)
 
