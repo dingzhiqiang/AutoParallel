@@ -207,21 +207,29 @@ class ModelSpec:
 
         if self.is_moe:
             ffn_per_expert = self.expert_intermediate_size * H * 3  # gate+up+down
-            ffn_per_layer = (
+            moe_ffn_per_layer = (
                 self.num_experts * ffn_per_expert
                 + self.n_shared_experts * self.intermediate_size * H * 3
                 + H * self.num_experts  # router
             )
+            dense_ffn_per_layer = self.intermediate_size * H * 3
         else:
-            ffn_per_layer = self.intermediate_size * H * 3
+            dense_ffn_per_layer = self.intermediate_size * H * 3
+            moe_ffn_per_layer = 0
 
         norm_per_layer = H * 2  # attn_norm + ffn_norm
-        per_layer = attn_per_layer + ffn_per_layer + norm_per_layer
+
+        k = self.first_k_dense_replace if self.is_moe else 0
+        n_dense = min(k, L)
+        n_moe = L - n_dense
+
+        ffn_total = n_moe * moe_ffn_per_layer + n_dense * dense_ffn_per_layer
+        per_layer_no_ffn = attn_per_layer + norm_per_layer
 
         output_head = V * H
         final_norm = H
 
-        return embedding + L * per_layer + output_head + final_norm
+        return embedding + L * per_layer_no_ffn + ffn_total + output_head + final_norm
 
 
 @dataclass

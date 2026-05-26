@@ -6,7 +6,7 @@ AutoParallel 是一个面向大语言模型（LLM）分布式训练与推理的�
 
 ### 1.1 设计目标
 
-- **零 GPU 依赖**：纯解析建模，不需要实际运行即可推荐策略
+- **无需 GPU 即可运行**：Layer 1 纯解析建模，不需要 GPU 即可完成策略推荐；Layer 2 Profiling 可选，需 GPU 采集性能数据以提升精度
 - **分层精度**：Layer 1 解析模型开箱即用；Layer 2 Profiling 插值按需提升精度
 - **训练 + 推理**：分别针对训练和推理场景建模，覆盖不同的性能瓶颈
 - **引擎感知**：Megatron / FSDP / SGLang 引擎的运行时行为差异纳入代价模型
@@ -114,9 +114,9 @@ GPU 型号预设，包含计算、通信、内存三类参数。用户只需指�
 | Dense Transformer | `hidden_size`, `num_attention_heads`, `intermediate_size` | 基础，始终存在 |
 | GQA | `num_key_value_heads` | $n_{kv} < n_{heads}$ |
 | MoE | `n_routed_experts`, `num_experts_per_tok`, `moe_intermediate_size` | $n_{experts} > 0$ |
-| MLA | `kv_lora_rank`, `q_lora_rank`, `qk_nope_head_dim`, `v_head_dim` | $kv\_lora\_rank > 0$ |
-| Lightning Attention | `group_norm_size` / `layer_group_size` | $group\_norm\_size > 0$ |
-| first-k dense replace | `first_k_dense_replace` | $first\_k > 0$ |
+| MLA | `kv_lora_rank`, `q_lora_rank`, `qk_nope_head_dim`, `v_head_dim` | `kv_lora_rank > 0` |
+| Lightning Attention | `group_norm_size` / `layer_group_size` | `group_norm_size > 0` |
+| first-k dense replace | `first_k_dense_replace` | `first_k > 0` |
 
 ### 2.3 并行策略空间
 
@@ -132,7 +132,7 @@ GPU 型号预设，包含计算、通信、内存三类参数。用户只需指�
 
 恒等约束：$d \cdot p \cdot t \cdot c = N_{gpu}$
 
-流水线调度约束（1F1B）：$batch\_size / d \geq 2p$
+流水线调度约束（1F1B）：$B_s / d \geq 2p$（$B_s$ 为 batch size）
 
 **推理 (InferenceStrategy)**：3 维 + 实例数
 
@@ -158,11 +158,11 @@ GPU 型号预设，包含计算、通信、内存三类参数。用户只需指�
 
 - Megatron 引擎将 EP AllToAll dispatch/combine 与 expert FFN 计算重叠执行：
 
-  $T_{MoE} = \max(T_{ep}, T_{routed\_ffn})$
+  $$T_{MoE} = \max(T_{ep},\; T_{ffn})$$
 
 - FSDP 引擎串行执行：
 
-  $T_{MoE} = T_{ep} + T_{routed\_ffn}$
+  $$T_{MoE} = T_{ep} + T_{ffn}$$
 
 这一差异对 MoE 模型的最优 TP/EP 组合选择有显著影响。
 
@@ -188,7 +188,7 @@ $$P_{attn} = \frac{H \cdot n_{heads} \cdot d_{head} + H \cdot n_{kv} \cdot d_{he
 
 MLA 架构（DeepSeek-V2/V3, GLM-5.1）中，部分投影不按 TP 分片（replicated），部分按 head 维度分片：
 
-$$P_{attn}^{MLA} = \underbrace{H \cdot r_q + H \cdot (r_{kv} + d_{rope})}_{replicated} + \frac{\underbrace{r_q \cdot n_{heads} \cdot d_{head} + r_{kv} \cdot n_{heads} \cdot (d_{nope} + d_v) + n_{heads} \cdot d_v \cdot H}_{TP\ 分片}}{t}$$
+$$P_{attn}^{MLA} = \underbrace{H \cdot r_q + H \cdot (r_{kv} + d_{rope})}_{\text{replicated}} + \frac{\underbrace{r_q \cdot n_h \cdot d_h + r_{kv} \cdot n_h \cdot (d_{nope} + d_v) + n_h \cdot d_v \cdot H}_{\text{TP-split}}}{t}$$
 
 其中 $r_q$ = `q_lora_rank`, $r_{kv}$ = `kv_lora_rank`, $d_{rope}$ = `qk_rope_head_dim`, $d_{nope}$ = `qk_nope_head_dim`, $d_v$ = `v_head_dim`。
 
@@ -210,7 +210,9 @@ $$P_{embed} = \frac{V \cdot H}{t}$$
 
 **每层参数汇总**：
 
-$$P_{layer} = P_{attn} + P_{ffn} + 2H \quad (\text{2H 为 attn\_norm + ffn\_norm})$$
+$$P_{layer} = P_{attn} + P_{ffn} + 2H$$
+
+其中 $2H$ 为 LayerNorm 参数（attn\_norm 和 ffn\_norm 各 $H$ 个参数）。
 
 **Pipeline 分片**：每个 PP stage 承担 $\lceil L/p \rceil$ 层。取最坏情况（余数分配到前几个 stage）。
 
@@ -222,7 +224,7 @@ $$M_{model} = \left(\lceil L/p \rceil \cdot P_{layer} + P_{embed}\right) \cdot B
 
 DDP 需要完整的梯度缓冲区用于 AllReduce 通信，**不按 DP 分片**：
 
-$$M_{grad\_buf} = P_{per\_rank} \cdot B_{grad}$$
+$$M_{\rm ddp} = P_{\rm rank} \cdot B_{grad}$$
 
 其中 $B_{grad} = 4$（fp32）或 $2$（bf16），取决于 `grad_reduce_in_fp32` 设置。
 
@@ -230,22 +232,22 @@ $$M_{grad\_buf} = P_{per\_rank} \cdot B_{grad}$$
 
 当 `grad_reduce_in_fp32=False` 时，梯度按 DP 分片存储：
 
-$$M_{grad\_shard} = \frac{P_{per\_rank} \cdot 4}{d}$$
+$$M_{grad} = \frac{P_{\rm rank} \cdot 4}{d}$$
 
 #### 3.1.4 优化器状态
 
 Adam 优化器每个参数需要 12 bytes（master weights fp32 + exp\_avg fp32 + exp\_avg\_sq fp32）：
 
-- **GPU 模式**（`cpu_offload=False`）：$M_{opt} = \frac{P_{per\_rank} \cdot 12}{d}$
+- **GPU 模式**（`cpu_offload=False`）：$M_{opt} = P_{\rm rank} \cdot 12 / d$
 - **CPU Offload 模式**（默认）：GPU 显存为 0，转移到 CPU 内存
 
 #### 3.1.5 激活内存
 
 激活内存与每张 GPU 处理的 token 数和隐藏维度相关：
 
-$$M_{act} = T_{per\_gpu} \cdot H \cdot f_{act} \cdot B / t$$
+$$M_{act} = \frac{T_{gpu} \cdot H \cdot f_{act} \cdot B}{t}$$
 
-其中 $T_{per\_gpu} = T_{mb} / (t \cdot c)$，$f_{act}$ 为引擎相关的激活因子：
+其中 $T_{gpu} = T_{mb} / (t \cdot c)$，$f_{act}$ 为引擎相关的激活因子：
 
 | 引擎 | Dense $f_{act}$ | MoE $f_{act}$ | 差异原因 |
 | --- | --- | --- | --- |
@@ -256,13 +258,13 @@ $$M_{act} = T_{per\_gpu} \cdot H \cdot f_{act} \cdot B / t$$
 
 #### 3.1.6 CUDA Context
 
-$$M_{cuda} = 8 + n_{comm\_groups} \quad (\text{GB})$$
+$$M_{cuda} = 8 + n_{groups} \quad (\mathrm{GB})$$
 
-$n_{comm\_groups}$ 为 NCCL 通信组数（TP + DP + PP + EP）。
+$n_{groups}$ 为 NCCL 通信组数（TP + DP + PP + EP）。
 
 #### 3.1.7 总显存
 
-$$M_{total} = (M_{model} + M_{grad\_buf} + M_{grad\_shard} + M_{opt} + M_{act}) \times 1.05 + M_{cuda}$$
+$$M_{total} = (M_{model} + M_{\rm ddp} + M_{grad} + M_{opt} + M_{act}) \times 1.05 + M_{cuda}$$
 
 1.05 为显存碎片系数。可行性判断：$M_{total} \leq M_{gpu}$。
 
@@ -270,11 +272,11 @@ $$M_{total} = (M_{model} + M_{grad\_buf} + M_{grad\_shard} + M_{opt} + M_{act}) 
 
 当 `optimizer_cpu_offload=True`（默认）时，优化器状态占 CPU 内存：
 
-$$M_{opt\_cpu}^{per\_rank} = \frac{P_{per\_rank} \cdot 12}{d}$$
+$$M_{\rm cpu\text{-}opt}^{\rm rank} = \frac{P_{\rm rank} \cdot 12}{d}$$
 
-$$M_{cpu}^{per\_node} = M_{opt\_cpu}^{per\_rank} \times G_{per\_node} + 40\ \text{GB}$$
+$$M_{\rm cpu}^{\rm node} = M_{\rm cpu\text{-}opt}^{\rm rank} \times G_{\rm node} + 40\;\mathrm{GB}$$
 
-40 GB 为操作系统 + CUDA runtime 的固定开销。可行性判断：$M_{cpu}^{per\_node} \leq M_{host}$。
+40 GB 为操作系统 + CUDA runtime 的固定开销。可行性判断：$M_{\rm cpu}^{\rm node} \leq M_{host}$。
 
 不满足 GPU 约束标记 `OOM`，不满足 CPU 约束标记 `CPU!`。
 
@@ -282,17 +284,17 @@ $$M_{cpu}^{per\_node} = M_{opt\_cpu}^{per\_rank} \times G_{per\_node} + 40\ \tex
 
 推理显存由三部分组成，无梯度和优化器：
 
-$$M_{infer} = M_{weights} + M_{kv\_cache} + M_{activation} + M_{cuda}$$
+$$M_{infer} = M_{weights} + M_{kv} + M_{act} + M_{cuda}$$
 
 **权重**：同训练的模型参数计算，但无 DDP buffer 和梯度。
 
 **KV Cache**：
 
-$$M_{kv} = \frac{T_{max\_batch} \cdot \lceil L/p \rceil \cdot kv\_bytes\_per\_token}{t}$$
+$$M_{kv} = \frac{T_{batch} \cdot \lceil L/p \rceil \cdot B_{kv}}{t}$$
 
-其中每层每 token 的 KV bytes：
-- Standard: $kv\_bytes = n_{kv} \cdot d_{head} \cdot 2 \cdot 2$（K + V, bf16）
-- MLA: $kv\_bytes = (r_{kv} + d_{rope}) \cdot 2$（压缩 KV）
+其中每层每 token 的 KV 字节数 $B_{kv}$：
+- Standard MHA: $B_{kv} = n_{kv} \cdot d_{head} \cdot 2 \cdot 2$（K + V, bf16）
+- MLA: $B_{kv} = (r_{kv} + d_{rope}) \cdot 2$（压缩 KV）
 
 **激活**：使用查表经验值，按 TP 和模型类型确定系数 $c$：
 
@@ -303,7 +305,7 @@ $$M_{kv} = \frac{T_{max\_batch} \cdot \lceil L/p \rceil \cdot kv\_bytes\_per\_to
 | 4 | 5 | 10 |
 | 8 | 5 | 10 |
 
-$$M_{act}^{infer} = \max\left(2 \cdot T_{prefill} \cdot H \cdot c,\ 70\ \text{MB}\right)$$
+$$M_{act}^{infer} = \max\left(2 \cdot T_{prefill} \cdot H \cdot c,\; 70\;\mathrm{MB}\right)$$
 
 ## 4. 训练吞吐量代价模型
 
@@ -321,25 +323,25 @@ $$M_{act}^{infer} = \max\left(2 \cdot T_{prefill} \cdot H \cdot c,\ 70\ \text{MB
 
 **Standard MHA/GQA**：
 
-$$F_{attn\_proj} = \frac{8 \cdot H^2 \cdot T}{t}$$
+$$F_{\rm attn\text{-}proj} = \frac{8 \cdot H^2 \cdot T}{t}$$
 
 对应 Q/K/V/O 四个投影，每个为 $2HHT$ FLOPs（矩阵乘法 FLOPs = $2MNK$）。
 
 **MLA**：
 
-$$F_{attn\_proj}^{MLA} = 2T \cdot \left(\underbrace{H \cdot r_q + H \cdot (r_{kv} + d_{rope})}_{replicated} + \frac{\underbrace{r_q \cdot n_h \cdot d_h + r_{kv} \cdot n_h \cdot (d_{nope} + d_v) + n_h \cdot d_v \cdot H}_{TP\ 分片}}{t}\right)$$
+$$F_{\rm attn\text{-}proj}^{MLA} = 2T \cdot \left(\underbrace{H \cdot r_q + H \cdot (r_{kv} + d_{rope})}_{\text{replicated}} + \frac{\underbrace{r_q \cdot n_h \cdot d_h + r_{kv} \cdot n_h \cdot (d_{nope} + d_v) + n_h \cdot d_v \cdot H}_{\text{TP-split}}}{t}\right)$$
 
 #### 4.1.2 Attention Score FLOPs
 
 **Standard**：
 
-$$F_{attn\_score} = \frac{4 \cdot T^2 \cdot H}{t}$$
+$$F_{\rm attn\text{-}score} = \frac{4 \cdot T^2 \cdot H}{t}$$
 
 对应 $QK^T$（$2T^2 H$）和 $AV$（$2T^2 H$），按 TP 分片。
 
 **MLA**：
 
-$$F_{attn\_score}^{MLA} = \frac{2 \cdot T^2 \cdot n_h \cdot (d_{qk} + d_v)}{t}$$
+$$F_{\rm attn\text{-}score}^{MLA} = \frac{2 \cdot T^2 \cdot n_h \cdot (d_{qk} + d_v)}{t}$$
 
 其中 $d_{qk} = d_{nope} + d_{rope}$。
 
@@ -363,7 +365,7 @@ $k$ = `num_experts_per_tok`（每 token 激活的专家数）。Routed experts �
 
 #### 4.1.4 计算时间
 
-$$T_{compute} = \frac{F_{attn\_proj} + F_{attn\_score} + F_{ffn}}{F_{peak}}$$
+$$T_{compute} = \frac{F_{\rm attn\text{-}proj} + F_{\rm attn\text{-}score} + F_{ffn}}{F_{peak}}$$
 
 其中 $F_{peak}$ 为 GPU 的 BF16 峰值算力（来自 HardwareSpec）。
 
@@ -382,7 +384,7 @@ Attention 输出需要 TP AllReduce。Ring AllReduce 的消息体积为 $2 \cdot
 - Dense 模型：每层 2 次 AllReduce（attention + FFN），$V_{payload} = H \cdot T \cdot 2$
 - MoE 模型：每层 1 次 AllReduce（仅 attention），FFN 走 EP AllToAll
 
-$$T_{tp} = \begin{cases} \alpha_{nvlink} + \frac{n_{ar} \cdot 2 \cdot \frac{t-1}{t} \cdot H \cdot T \cdot 2}{B_{nvlink}^{eff}} & \text{if } t \leq G_{per\_node} \\ \alpha_{ib} + \frac{n_{ar} \cdot 2 \cdot \frac{t-1}{t} \cdot H \cdot T \cdot 2}{B_{ib}} & \text{if } t > G_{per\_node} \end{cases}$$
+$$T_{tp} = \begin{cases} \alpha_{nvlink} + \dfrac{n_{ar} \cdot 2 \cdot \frac{t-1}{t} \cdot H \cdot T \cdot 2}{B_{nvlink}^{eff}} & \text{if } t \leq G_{\rm node} \\[6pt] \alpha_{ib} + \dfrac{n_{ar} \cdot 2 \cdot \frac{t-1}{t} \cdot H \cdot T \cdot 2}{B_{ib}} & \text{if } t > G_{\rm node} \end{cases}$$
 
 **TP 带宽退化**（Megatron 引擎）：当 TP > 4 时，多个 NVLink ring 竞争带宽：
 
@@ -394,19 +396,19 @@ EP AllToAll 的消息体积（dispatch + combine 两次）：
 
 $$V_{total} = 2 \cdot T \cdot H \cdot 2 \cdot \frac{e - 1}{e}$$
 
-**节点内**（$e \leq G_{per\_node}$）：
+**节点内**（$e \leq G_{\rm node}$）：
 
 $$T_{ep} = \alpha_{nvlink} + \frac{V_{total}}{B_{nvlink}}$$
 
-**跨节点**（$e > G_{per\_node}$，分层 AllToAll）：
+**跨节点**（$e > G_{\rm node}$，分层 AllToAll）：
 
 参考 AIConfigurator 的分层建模方法，将流量分为节点内和跨节点两部分：
 
-$$f_{intra} = \frac{G_{per\_node} - 1}{e - 1}, \quad f_{inter} = 1 - f_{intra}$$
+$$f_{intra} = \frac{G_{\rm node} - 1}{e - 1}, \quad f_{inter} = 1 - f_{intra}$$
 
-跨节点通信受多节点拥塞影响，引入拥塞因子 $\sqrt{n_{ep\_nodes}}$：
+跨节点通信受多节点拥塞影响，引入拥塞因子 $\sqrt{e / G_{\rm node}}$：
 
-$$T_{ep} = \alpha_{ib} + \frac{V_{total} \cdot f_{intra}}{B_{nvlink}} + \frac{V_{total} \cdot f_{inter}}{B_{ib}} \cdot \sqrt{\frac{e}{G_{per\_node}}}$$
+$$T_{ep} = \alpha_{ib} + \frac{V_{total} \cdot f_{intra}}{B_{nvlink}} + \frac{V_{total} \cdot f_{inter}}{B_{ib}} \cdot \sqrt{\frac{e}{G_{\rm node}}}$$
 
 #### 4.2.3 CP Ring Attention
 
@@ -429,15 +431,15 @@ $$T_{pp} = \alpha_{ib} + \frac{T_{mb} / c \cdot H \cdot 2}{B_{ib}}$$
 
 **每层时间**（前向 1x + 反向 2x = 3x）：
 
-$$T_{layer} = 3 \times T_{per\_layer}$$
+$$T_{layer} = 3 \times T_{\rm layer}^{\rm comp}$$
 
-其中 $T_{per\_layer}$ 取决于引擎的 overlap 策略：
+其中 $T_{\rm layer}^{\rm comp}$ 取决于引擎的 overlap 策略：
 
 - **Megatron**（EP overlap）：
-  $$T_{per\_layer} = T_{attn\_compute} + T_{tp} + \max(T_{ep}, T_{routed\_compute}) + T_{shared\_compute} + T_{cp}$$
+  $$T_{\rm layer}^{\rm comp} = T_{\rm attn} + T_{tp} + \max(T_{ep},\; T_{\rm routed}) + T_{\rm shared} + T_{cp}$$
 
 - **FSDP**（串行）：
-  $$T_{per\_layer} = T_{total\_compute} + T_{tp} + T_{ep} + T_{cp}$$
+  $$T_{\rm layer}^{\rm comp} = T_{\rm compute} + T_{tp} + T_{ep} + T_{cp}$$
 
 **Pipeline stage 时间**：
 
@@ -447,7 +449,7 @@ $$T_{stage} = T_{layer} \times \lceil L/p \rceil + T_{pp}$$
 
 $$T_{total} = (p + n_{mb} - 1) \times T_{stage}$$
 
-其中 $n_{mb} = batch\_size / d$（micro-batch 数）。Pipeline bubble 比例为 $(p-1)/(p + n_{mb} - 1)$。
+其中 $n_{mb} = B_s / d$（micro-batch 数）。Pipeline bubble 比例为 $(p-1)/(p + n_{mb} - 1)$。
 
 **吞吐量得分**：
 
@@ -467,45 +469,45 @@ $$Score = \frac{d \cdot n_{mb}}{T_{total}}$$
 
 Prefill 阶段一次性处理全部输入 token，受 GPU 计算能力限制：
 
-$$T_{prefill}^{per\_layer} = \frac{F_{compute}(T_{pf})}{F_{peak}} + T_{comm}(T_{pf})$$
+$$T_{\rm prefill}^{\rm layer} = \frac{F_{compute}(T_{pf})}{F_{peak}} + T_{comm}(T_{pf})$$
 
-$$T_{prefill} = T_{prefill}^{per\_layer} \times \lceil L/p \rceil + T_{pp\_p2p} \times (p - 1)$$
+$$T_{\rm prefill} = T_{\rm prefill}^{\rm layer} \times \lceil L/p \rceil + T_{\rm p2p} \times (p - 1)$$
 
 其中 $T_{pf} = ISL \times batch / tp$，$F_{compute}$ 和 $T_{comm}$ 的计算方式与训练相同（参见 4.1、4.2）。
 
 **Prefill 吞吐量**：
 
-$$TPS_{prefill} = \frac{ISL \times batch}{T_{prefill}}$$
+$$TPS_{\rm prefill} = \frac{ISL \times batch}{T_{\rm prefill}}$$
 
 ### 5.2 Decode（内存带宽密集型）
 
 Decode 阶段每步只生成 1 个 token/request，受 HBM 读取带宽限制。采用 Roofline 模型：
 
-$$T_{decode}^{per\_stage} = \max\left(\underbrace{\frac{F_{compute}(batch)}{F_{peak}} \times layers}_{compute},\ \underbrace{\frac{W_{bytes} + KV_{bytes}}{B_{hbm}}}_{memory\ read}\right) + T_{comm}(batch) \times layers$$
+$$T_{\rm decode}^{\rm stage} = \max\!\left(\underbrace{\frac{F_{compute}(batch)}{F_{peak}} \times layers}_{\text{compute}},\; \underbrace{\frac{W_{bytes} + KV_{bytes}}{B_{hbm}}}_{\text{memory read}}\right) + T_{comm}(batch) \times layers$$
 
 **权重读取**：$W_{bytes}$ 为本 stage 的模型权重大小（bf16）。
 
 **KV Cache 读取**：
 
-$$KV_{bytes} = \frac{batch \times \bar{S} \times layers \times kv\_bytes\_per\_token}{t}$$
+$$KV_{bytes} = \frac{batch \times \bar{S} \times layers \times B_{kv}}{t}$$
 
 其中 $\bar{S} = ISL + OSL/2$ 为平均序列长度。
 
 **PP 串行**：推理 PP 无 microbatch 流水线，各 stage 串行执行：
 
-$$T_{decode} = T_{decode}^{per\_stage} \times p + T_{pp\_p2p} \times (p - 1)$$
+$$T_{\rm decode} = T_{\rm decode}^{\rm stage} \times p + T_{\rm p2p} \times (p - 1)$$
 
 **Decode 吞吐量**：
 
-$$TPS_{decode} = \frac{batch}{T_{decode}}$$
+$$TPS_{\rm decode} = \frac{batch}{T_{\rm decode}}$$
 
 ### 5.3 聚合吞吐量
 
 多实例部署时，聚合 decode 吞吐量为：
 
-$$TPS_{aggregate} = n_{instances} \times TPS_{decode}$$
+$$TPS_{\rm agg} = n_{instances} \times TPS_{\rm decode}$$
 
-推理策略按 $TPS_{aggregate}$ 降序排序。
+推理策略按 $TPS_{\rm agg}$ 降序排序。
 
 ## 6. Profiling 插值（Layer 2）
 
@@ -596,14 +598,14 @@ $$\log t_q = \log t_1 + \frac{\log M_q - \log M_1}{\log M_2 - \log M_1} \cdot (\
    - $c \in \{1, 2, 4, 8\}$
 
 2. **约束过滤**：
-   - GQA: $n_{kv} \mod t = 0$
-   - GroupNorm: $(n_{heads}/t) \mod group\_norm\_size = 0$
-   - CP: $(n_{heads}/t) \mod c = 0$（Lightning Attention）
-   - Token 整除: $T_{mb} \mod c = 0$
-   - MoE: $e = t \cdot c$, $n_{experts} \mod e = 0$
+   - GQA: $n_{kv} \bmod t = 0$
+   - GroupNorm: $(n_{heads}/t) \bmod g = 0$（$g$ 为 `group_norm_size`）
+   - CP: $(n_{heads}/t) \bmod c = 0$（Lightning Attention）
+   - Token 整除: $T_{mb} \bmod c = 0$
+   - MoE: $e = t \cdot c$, $n_{experts} \bmod e = 0$
    - DP: $d = N_{gpu} / (p \cdot t \cdot c)$，须为正整数
-   - Batch: $batch\_size \mod d = 0$（若指定）
-   - 1F1B: $batch\_size / d \geq 2p$
+   - Batch: $B_s \bmod d = 0$（若指定）
+   - 1F1B: $B_s / d \geq 2p$
 
 3. **显存估算**（§3）→ 过滤 OOM
 

@@ -211,7 +211,7 @@ python -m autoparallel --mode inference --model-path /path/to/model --n-gpus 64
 
 ```
 ============================================================================
-Model: 786.3B params | MoE=True (256 experts) | MLA=True | Layers=78
+Model: 757.3B params | MoE=True (256 experts) | MLA=True | Layers=78
 max_tokens_per_mb=16384 | GPU=140GB | Host=1500GB/node | Engine=megatron
 ============================================================================
   #  DP  PP  TP  CP   EP  Tok/GPU  Layers Exp/R   Model  GrdBuf  ...  Fit?
@@ -274,7 +274,7 @@ See [DESIGN.md](DESIGN.md) for details.
 | **FP8/Quantization** | ✗ (planned) | ✗ | ✗ | ✓ | ✗ |
 | **Inference mode** | ✓ (Roofline) | ✗ | ✗ | ✗ | ✗ |
 | **Engine-aware** | ✓ (Megatron/FSDP/SGLang) | ✗ | ✗ | ✗ | ✗ |
-| **GPU dependency** | None | Profiling needed | ILP solver | Runtime | Runtime |
+| **GPU dependency** | None (optional profiling) | Profiling needed | ILP solver | Runtime | Runtime |
 | **Training support** | ✓ | ✓ | ✓ | ✓ | ✓ |
 | **Search algorithm** | Enumeration | Dynamic Programming | ILP | Config | Config |
 
@@ -283,7 +283,7 @@ See [DESIGN.md](DESIGN.md) for details.
 1. Unified training + inference advisor in one tool
 2. Engine-aware cost model (Megatron EP overlap, TP BW degradation)
 3. MLA-aware CP costing (3.5% of standard MHA)
-4. Zero GPU dependency — runs in seconds from config.json alone
+4. No GPU required — runs in seconds from config.json alone; optional profiling for higher accuracy
 
 ## Roadmap
 

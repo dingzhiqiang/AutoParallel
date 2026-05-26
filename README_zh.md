@@ -252,7 +252,7 @@ python -m autoparallel --mode inference --model-path /path/to/model --n-gpus 64
 
 ```
 ============================================================================
-Model: 786.3B params | MoE=True (256 experts) | MLA=True | Layers=78
+Model: 757.3B params | MoE=True (256 experts) | MLA=True | Layers=78
 max_tokens_per_mb=16384 | GPU=140GB | Host=1500GB/node | Engine=megatron
 ============================================================================
   #  DP  PP  TP  CP   EP  Tok/GPU  Layers Exp/R   Model  GrdBuf  ...  Fit?
@@ -324,7 +324,7 @@ Top-3 Recommended (by aggregate decode throughput)
 1. 训练 + 推理统一推荐，一个工具覆盖两种场景
 2. 引擎感知代价模型（Megatron EP overlap、TP 带宽退化）
 3. MLA 感知的 CP 代价计算（仅标准 MHA 的 3.5%）
-4. 零 GPU 依赖——仅需 config.json，秒级完成推荐
+4. 无需 GPU 即可运行——仅需 config.json，秒级完成推荐；可选 Profiling 进一步提升精度
 
 ## 路线图
 

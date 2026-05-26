@@ -2,13 +2,13 @@
 
 Real-world validation of AutoParallel's strategy recommendations.
 
-## 1. Training: GLM-5.1 (671B MoE) on 128×H200
+## 1. Training: GLM-5.1 (757B MoE) on 128×H200
 
 ### Setup
 
 | Item | Value |
 | --- | --- |
-| **Model** | GLM-5.1 (671B MoE, 256 experts, MLA, 78 layers, H=6144) |
+| **Model** | GLM-5.1 (757B MoE, 256 experts, MLA, 78 layers, H=6144) |
 | **Cluster** | 128 × H200 (141 GB), 16 nodes |
 | **Interconnect** | NVLink 450 GB/s (intra-node), IB 50 GB/s (inter-node) |
 | **Data** | SFT, max_length=16384 |
@@ -140,7 +140,7 @@ We compare AutoParallel's inference recommendations with SGLang's official
 | LLaMA-3.1-70B | 70B | Dense GQA | 8×H100 | - | TP=4 ×2 inst (6902 tps) | ✓ Multi-inst |
 | Qwen3-235B-A22B | 246B | MoE 128E | 16×H200 | TP=8, EP∈{1,4,8} | TP=8 EP=8 ×2 inst (8615 tps) | ✓ |
 | DeepSeek-V3 | 725B | MoE+MLA | 16×H200 | TP=8 (FP8) | TP=16 EP=16 (126.7G) | Note¹ |
-| GLM-5.1 | 671B | MoE+MLA | 16×H200 | (prod deploy) | TP=16 EP=16 (114.5G) | ✓ Real² |
+| GLM-5.1 | 757B | MoE+MLA | 16×H200 | (prod deploy) | TP=16 EP=16 (114.5G) | ✓ Real² |
 
 ¹ SGLang cookbook uses FP8 weights (1 byte/param) on 8 GPU; AutoParallel models BF16
 (2 bytes/param) requiring 16 GPU. With FP8 support, the recommendation would be TP=8 EP=8.

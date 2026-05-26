@@ -2,13 +2,13 @@
 
 AutoParallel 策略推荐的真实环境验证。
 
-## 1. 训练：GLM-5.1 (671B MoE) 128×H200
+## 1. 训练：GLM-5.1 (757B MoE) 128×H200
 
 ### 实验配置
 
 | 项目 | 值 |
 | --- | --- |
-| **模型** | GLM-5.1（671B MoE，256 experts，MLA，78 层，H=6144） |
+| **模型** | GLM-5.1（757B MoE，256 experts，MLA，78 层，H=6144） |
 | **集群** | 128 × H200（141 GB），16 节点 |
 | **互联** | NVLink 450 GB/s（节点内），IB 50 GB/s（节点间） |
 | **数据** | SFT，max_length=16384 |
@@ -135,7 +135,7 @@ TP=8 有效带宽降至 TP=4 的约 70%，与 `1/sqrt(tp/4)` 模型一致：
 | LLaMA-3.1-70B | 70B | Dense GQA | 8×H100 | - | TP=4 ×2 inst (6902 tps) | ✓ 多实例 |
 | Qwen3-235B-A22B | 246B | MoE 128E | 16×H200 | TP=8, EP∈{1,4,8} | TP=8 EP=8 ×2 inst (8615 tps) | ✓ |
 | DeepSeek-V3 | 725B | MoE+MLA | 16×H200 | TP=8 (FP8) | TP=16 EP=16 (126.7G) | 注¹ |
-| GLM-5.1 | 671B | MoE+MLA | 16×H200 | （生产部署） | TP=16 EP=16 (114.5G) | ✓ 实测² |
+| GLM-5.1 | 757B | MoE+MLA | 16×H200 | （生产部署） | TP=16 EP=16 (114.5G) | ✓ 实测² |
 
 ¹ SGLang cookbook 使用 FP8 权重（1 byte/参数）在 8 GPU；AutoParallel 建模 BF16
 （2 bytes/参数）需要 16 GPU。支持 FP8 后推荐将是 TP=8 EP=8。
