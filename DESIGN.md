@@ -204,6 +204,12 @@ $$P_{ffn}^{MoE} = \frac{n_{experts}}{e} \cdot 3 \cdot H \cdot d_{expert} + \frac
 
 依次为：本地 routed experts（按 EP 分片）、shared experts（按 TP 分片）、router 权重。
 
+**first_k_dense_replace**：部分模型（DeepSeek-V3、GLM-5.1）的前 $k$ 层使用 dense FFN 替代 MoE FFN。总参数量计算时需分别统计：
+
+$$P_{total} = P_{embed} + (L - k) \cdot (P_{attn} + P_{ffn}^{MoE} + 2H) + k \cdot (P_{attn} + P_{ffn}^{dense} + 2H) + P_{output}$$
+
+显存估算时，比较包含 dense 替换层的 stage 和纯 MoE stage 的参数量，取最大值（worst-case stage）。
+
 **Embedding + Output Head**：
 
 $$P_{embed} = \frac{V \cdot H}{t}$$
@@ -243,18 +249,32 @@ Adam 优化器每个参数需要 12 bytes（master weights fp32 + exp\_avg fp32 
 
 #### 3.1.5 激活内存
 
-激活内存与每张 GPU 处理的 token 数和隐藏维度相关：
+激活内存取决于是否启用 activation recompute（默认启用）。
 
-$$M_{act} = \frac{T_{gpu} \cdot H \cdot f_{act} \cdot B}{t}$$
+**recompute=True（默认）**：仅保存每层输入的 hidden state 作为 checkpoint，反向传播时重算中间激活。总激活内存 = checkpoint 内存 + 单层工作内存：
 
-其中 $T_{gpu} = T_{mb} / (t \cdot c)$，$f_{act}$ 为引擎相关的激活因子：
+$$M_{act}^{recomp} = \underbrace{\frac{T_{gpu} \cdot H \cdot B}{t} \cdot \lceil L/p \rceil \cdot n_{inflight}}_{\text{checkpoint}} + \underbrace{\frac{T_{gpu} \cdot H \cdot f_{act} \cdot B}{t}}_{\text{working}}$$
+
+其中：
+- $T_{gpu} = T_{mb} / c$（TP 切分的是 hidden 维度，不切分 token 维度）
+- $n_{inflight} = \max(p, 1)$：1F1B schedule 下同时在飞的 micro-batch 数
+- checkpoint 是每层每个 in-flight micro-batch 的输入 hidden state（$T_{gpu} \cdot H \cdot B / t$ per layer）
+- working 是反向重算**单层**中间激活的峰值（不随层数增长）
+
+**recompute=False**：保存所有层的完整中间激活：
+
+$$M_{act}^{full} = \frac{T_{gpu} \cdot H \cdot f_{act} \cdot B}{t} \cdot \lceil L/p \rceil$$
+
+$f_{act}$ 为引擎相关的激活因子：
 
 | 引擎 | Dense $f_{act}$ | MoE $f_{act}$ | 差异原因 |
 | --- | --- | --- | --- |
 | Megatron | 10 | 18 | MoE 额外的 router logits、dispatch/combine 缓冲区 |
 | FSDP | 10 | 14 | FSDP 实现的 MoE 激活更紧凑 |
 
-当启用 activation recompute 时，仅保存 checkpoint 边界的激活，大幅减少激活内存。
+当 MoE 模型时，还需加上 EP AllToAll 的 dispatch/combine 通信缓冲区：
+
+$$M_{comm} = T_{gpu} \cdot H \cdot B \cdot 2$$
 
 #### 3.1.6 CUDA Context
 
@@ -296,7 +316,7 @@ $$M_{kv} = \frac{T_{batch} \cdot \lceil L/p \rceil \cdot B_{kv}}{t}$$
 - Standard MHA: $B_{kv} = n_{kv} \cdot d_{head} \cdot 2 \cdot 2$（K + V, bf16）
 - MLA: $B_{kv} = (r_{kv} + d_{rope}) \cdot 2$（压缩 KV）
 
-**激活**：使用查表经验值，按 TP 和模型类型确定系数 $c$：
+**激活**：使用查表经验值，按 TP 和模型类型确定系数 $c$（注意推理激活不按 TP 分片，与训练不同）：
 
 | TP | Dense $c$ | MoE $c$ |
 | --- | --- | --- |
@@ -306,6 +326,12 @@ $$M_{kv} = \frac{T_{batch} \cdot \lceil L/p \rceil \cdot B_{kv}}{t}$$
 | 8 | 5 | 10 |
 
 $$M_{act}^{infer} = \max\left(2 \cdot T_{prefill} \cdot H \cdot c,\; 70\;\mathrm{MB}\right)$$
+
+其中 $T_{prefill} = ISL \times batch / pp$。
+
+**与训练的差异**：推理显存估算不含碎片系数（训练为 1.05×），CUDA context 固定为 5 GB（训练为 $8 + n_{groups}$ GB），激活公式不按 TP 分片。总计：
+
+$$M_{infer} = M_{weights} + M_{kv} + M_{act}^{infer} + 5\;\mathrm{GB}$$
 
 ## 4. 训练吞吐量代价模型
 
@@ -325,7 +351,7 @@ $$M_{act}^{infer} = \max\left(2 \cdot T_{prefill} \cdot H \cdot c,\; 70\;\mathrm
 
 $$F_{\rm attn\text{-}proj} = \frac{8 \cdot H^2 \cdot T}{t}$$
 
-对应 Q/K/V/O 四个投影，每个为 $2HHT$ FLOPs（矩阵乘法 FLOPs = $2MNK$）。
+对应 Q/K/V/O 四个投影，每个为 $2HHT$ FLOPs（矩阵乘法 FLOPs = $2MNK$）。该公式假设 $n_{kv} = n_{heads}$（标准 MHA）；对 GQA 模型（$n_{kv} < n_{heads}$），K/V 投影 FLOPs 实际更小，精确公式为 $2TH(2H + 2 n_{kv} d_{head})/t$。代价模型使用简化公式，对排序影响较小（FFN FLOPs 通常占主导）。
 
 **MLA**：
 
