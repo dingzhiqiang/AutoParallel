@@ -178,7 +178,7 @@ python -m autoparallel --mode inference --model-path /path/to/model --n-gpus 64
 | `--max-length` | 16384 | Max sequence length |
 | `--batch-size` | 0 | Global batch size (0=unconstrained) |
 | `--engine` | megatron | Engine preset (megatron/fsdp/sglang) |
-| `--no-optimizer-cpu-offload` | false | Disable optimizer CPU offload |
+| `--optimizer-cpu-offload` | false | Assume optimizer states offloaded to CPU (default: on GPU, matching typical Megatron configs) |
 | `--no-recompute` | false | Disable activation recompute |
 | `--no-grad-reduce-in-fp32` | false | Use bf16 gradient accumulation |
 

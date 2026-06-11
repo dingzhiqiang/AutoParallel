@@ -188,7 +188,7 @@ python -m autoparallel --mode inference --model-path /path/to/model --n-gpus 64
 | `--max-length` | 16384 | 序列最大长度 |
 | `--batch-size` | 0 | 全局 batch size（0=不约束 DP） |
 | `--engine` | megatron | 引擎预设 (megatron/fsdp/sglang) |
-| `--no-optimizer-cpu-offload` | false | 禁用 optimizer CPU offload |
+| `--optimizer-cpu-offload` | false | 假设 optimizer states 已 offload 到 CPU（默认在 GPU 上，与常见 Megatron 配置一致）|
 | `--no-recompute` | false | 禁用 activation recompute |
 | `--no-grad-reduce-in-fp32` | false | 用 bf16 梯度累加 |
 
@@ -244,7 +244,7 @@ python -m autoparallel --mode inference --model-path /path/to/model --n-gpus 64
 
 ### CPU 内存（per-node）
 
-当 `optimizer_cpu_offload=True`（默认）时，optimizer states 占 CPU 内存。超出 `host_memory_gb` 的策略标记为 `CPU!`。
+当 `optimizer_cpu_offload=True`（默认 False，需显式开启 `--optimizer-cpu-offload`）时，optimizer states 占 CPU 内存。超出 `host_memory_gb` 的策略标记为 `CPU!`。
 
 ## 输出示例
 

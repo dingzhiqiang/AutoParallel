@@ -353,7 +353,7 @@ def estimate_memory(
     model: ModelSpec,
     strategy: ParallelStrategy,
     max_tokens_per_mb: int,
-    optimizer_cpu_offload: bool = True,
+    optimizer_cpu_offload: bool = False,
     recompute: bool = True,
     grad_reduce_in_fp32: bool = True,
     engine: EngineConfig | None = None,
@@ -776,7 +776,7 @@ def search_strategies(
     cluster: ClusterSpec,
     max_tokens_per_mb: int,
     max_length: int = 16384,
-    optimizer_cpu_offload: bool = True,
+    optimizer_cpu_offload: bool = False,
     recompute: bool = True,
     min_dp: int = 1,
     max_pp: int = 16,
@@ -1608,7 +1608,13 @@ Examples:
         default=0,
         help="Global batch size (adds DP divisibility constraint)",
     )
-    g.add_argument("--no-optimizer-cpu-offload", action="store_true")
+    g.add_argument(
+        "--optimizer-cpu-offload",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Assume optimizer states are offloaded to CPU "
+        "(default: off, matching typical Megatron training configs)",
+    )
     g.add_argument(
         "--no-grad-reduce-in-fp32",
         action="store_true",
@@ -1721,7 +1727,7 @@ def _find_min_nodes(
             c,
             max_tokens_per_mb=args.max_tokens_per_mb,
             max_length=args.max_length,
-            optimizer_cpu_offload=not args.no_optimizer_cpu_offload,
+            optimizer_cpu_offload=args.optimizer_cpu_offload,
             recompute=not args.no_recompute,
             batch_size=args.batch_size,
             grad_reduce_in_fp32=not args.no_grad_reduce_in_fp32,
@@ -1862,7 +1868,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         cluster,
         max_tokens_per_mb=args.max_tokens_per_mb,
         max_length=args.max_length,
-        optimizer_cpu_offload=not args.no_optimizer_cpu_offload,
+        optimizer_cpu_offload=args.optimizer_cpu_offload,
         recompute=not args.no_recompute,
         batch_size=args.batch_size,
         grad_reduce_in_fp32=not args.no_grad_reduce_in_fp32,

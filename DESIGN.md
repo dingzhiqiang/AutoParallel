@@ -290,7 +290,7 @@ $$M_{total} = (M_{model} + M_{\rm ddp} + M_{grad} + M_{opt} + M_{act}) \times 1.
 
 ### 3.2 CPU/Host 内存（per-node）
 
-当 `optimizer_cpu_offload=True`（默认）时，优化器状态占 CPU 内存：
+当 `optimizer_cpu_offload=True`（默认 False，需显式开启 `--optimizer-cpu-offload`）时，优化器状态占 CPU 内存：
 
 $$M_{\rm cpu\text{-}opt}^{\rm rank} = \frac{P_{\rm rank} \cdot 12}{d}$$
 
